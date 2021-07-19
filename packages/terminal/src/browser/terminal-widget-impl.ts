@@ -61,6 +61,7 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
     protected hoverMessage: HTMLDivElement;
     protected lastTouchEnd: TouchEvent | undefined;
     protected isAttachedCloseListener: boolean = false;
+    lastCwd = new URI();
 
     @inject(WorkspaceService) protected readonly workspaceService: WorkspaceService;
     @inject(WebSocketConnectionProvider) protected readonly webSocketConnectionProvider: WebSocketConnectionProvider;
@@ -298,7 +299,10 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
         }
         if (this.terminalService.getById(this.id)) {
             return this.shellTerminalServer.getCwdURI(this.terminalId)
-                .then(cwdUrl => new URI(cwdUrl));
+                .then(cwdUrl => {
+                    this.lastCwd = new URI(cwdUrl);
+                    return this.lastCwd;
+                }).catch(() => this.lastCwd);
         }
         return Promise.resolve(new URI());
     }
@@ -371,6 +375,7 @@ export class TerminalWidgetImpl extends TerminalWidget implements StatefulWidget
         this.connectTerminalProcess();
         if (IBaseTerminalServer.validateId(this.terminalId)) {
             this.onDidOpenEmitter.fire(undefined);
+            await this.shellTerminalServer.onAttachAttempted(this._terminalId);
             return this.terminalId;
         }
         this.onDidOpenFailureEmitter.fire(undefined);

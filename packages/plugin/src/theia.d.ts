@@ -82,6 +82,11 @@ declare module '@theia/plugin' {
         readonly pluginPath: string;
 
         /**
+         * The uri of the directory containing this plug-in.
+         */
+        readonly pluginUri: Uri;
+
+        /**
          * `true` if the plug-in has been activated.
          */
         readonly isActive: boolean;
@@ -2067,100 +2072,10 @@ declare module '@theia/plugin' {
     }
 
     /**
-     * A light-weight user input UI that is initially not visible. After
-     * configuring it through its properties the extension can make it
-     * visible by calling [QuickInput.show](#QuickInput.show).
-     *
-     * There are several reasons why this UI might have to be hidden and
-     * the extension will be notified through [QuickInput.onDidHide](#QuickInput.onDidHide).
-     * (Examples include: an explicit call to [QuickInput.hide](#QuickInput.hide),
-     * the user pressing Esc, some other input UI opening, etc.)
-     *
-     * A user pressing Enter or some other gesture implying acceptance
-     * of the current state does not automatically hide this UI component.
-     * It is up to the extension to decide whether to accept the user's input
-     * and if the UI should indeed be hidden through a call to [QuickInput.hide](#QuickInput.hide).
-     *
-     * When the extension no longer needs this input UI, it should
-     * [QuickInput.dispose](#QuickInput.dispose) it to allow for freeing up
-     * any resources associated with it.
-     *
-     * See [QuickPick](#QuickPick) and [InputBox](#InputBox) for concrete UIs.
-     */
-    export interface QuickInput {
-
-        /**
-         * An optional title.
-         */
-        title: string | undefined;
-
-        /**
-         * An optional current step count.
-         */
-        step: number | undefined;
-
-        /**
-         * An optional total step count.
-         */
-        totalSteps: number | undefined;
-
-        /**
-         * If the UI should allow for user input. Defaults to true.
-         *
-         * Change this to false, e.g., while validating user input or
-         * loading data for the next step in user input.
-         */
-        enabled: boolean;
-
-        /**
-         * If the UI should show a progress indicator. Defaults to false.
-         *
-         * Change this to true, e.g., while loading more data or validating
-         * user input.
-         */
-        busy: boolean;
-
-        /**
-         * If the UI should stay open even when loosing UI focus. Defaults to false.
-         */
-        ignoreFocusOut: boolean;
-
-        /**
-         * Makes the input UI visible in its current configuration. Any other input
-         * UI will first fire an [QuickInput.onDidHide](#QuickInput.onDidHide) event.
-         */
-        show(): void;
-
-        /**
-         * Hides this input UI. This will also fire an [QuickInput.onDidHide](#QuickInput.onDidHide)
-         * event.
-         */
-        hide(): void;
-
-        /**
-         * An event signaling when this input UI is hidden.
-         *
-         * There are several reasons why this UI might have to be hidden and
-         * the extension will be notified through [QuickInput.onDidHide](#QuickInput.onDidHide).
-         * (Examples include: an explicit call to [QuickInput.hide](#QuickInput.hide),
-         * the user pressing Esc, some other input UI opening, etc.)
-         */
-        onDidHide: Event<void>;
-
-        /**
-         * Dispose of this input UI and any associated resources. If it is still
-         * visible, it is first hidden. After this call the input UI is no longer
-         * functional and no additional methods or properties on it should be
-         * accessed. Instead a new input UI should be created.
-         */
-        dispose(): void;
-    }
-
-    /**
-     * Something that can be selected from a list of items.
+     * Represents an item that can be selected from a list of items.
      */
     export interface QuickPickItem {
-
+        type?: 'item' | 'separator';
         /**
          * The item label
          */
@@ -2181,32 +2096,10 @@ declare module '@theia/plugin' {
          * not implemented yet
          */
         picked?: boolean;
-
         /**
-         * Used to display the group label in the right corner of item
+         * Always show this item.
          */
-        groupLabel?: string;
-
-        /**
-         * Used to display border after item
-         */
-        showBorder?: boolean;
-    }
-
-    /**
-     * Button for an action in a [QuickPick](#QuickPick) or [InputBox](#InputBox).
-     */
-    export interface QuickInputButton {
-
-        /**
-         * Icon for the button.
-         */
-        readonly iconPath: Uri | { light: Uri; dark: Uri } | ThemeIcon;
-
-        /**
-         * An optional tooltip.
-         */
-        readonly tooltip?: string | undefined;
+        alwaysShow?: boolean;
     }
 
     /**
@@ -2390,7 +2283,7 @@ declare module '@theia/plugin' {
          * @return A human readable string which is presented as diagnostic message.
          * Return `undefined`, or the empty string when 'value' is valid.
          */
-        validateInput?(value: string): string | undefined | PromiseLike<string | undefined>;
+        validateInput?: (input: string) => Promise<string | null | undefined> | undefined;
 
         /**
          * An optional function that will be called on Enter key.
@@ -2600,7 +2493,7 @@ declare module '@theia/plugin' {
          */
         static readonly Folder: ThemeIcon;
 
-        private constructor(id: string);
+        private constructor(public id: string);
     }
 
     /**
@@ -2971,6 +2864,71 @@ declare module '@theia/plugin' {
     }
 
     /**
+     * A file decoration represents metadata that can be rendered with a file.
+     */
+    export class FileDecoration {
+
+        /**
+         * A very short string that represents this decoration.
+         */
+        badge?: string;
+
+        /**
+         * A human-readable tooltip for this decoration.
+         */
+        tooltip?: string;
+
+        /**
+         * The color of this decoration.
+         */
+        color?: ThemeColor;
+
+        /**
+         * A flag expressing that this decoration should be
+         * propagated to its parents.
+         */
+        propagate?: boolean;
+
+        /**
+         * Creates a new decoration.
+         *
+         * @param badge A letter that represents the decoration.
+         * @param tooltip The tooltip of the decoration.
+         * @param color The color of the decoration.
+         */
+        constructor(badge?: string, tooltip?: string, color?: ThemeColor);
+    }
+
+    /**
+     * The decoration provider interfaces defines the contract between extensions and
+     * file decorations.
+     */
+    export interface FileDecorationProvider {
+
+        /**
+         * An optional event to signal that decorations for one or many files have changed.
+         *
+         * *Note* that this event should be used to propagate information about children.
+         *
+         * @see [EventEmitter](#EventEmitter)
+         */
+        onDidChangeFileDecorations?: Event<undefined | Uri | Uri[]>;
+
+        /**
+         * Provide decorations for a given uri.
+         *
+         * *Note* that this function is only called when a file gets rendered in the UI.
+         * This means a decoration from a descendent that propagates upwards must be signaled
+         * to the editor via the [onDidChangeFileDecorations](#FileDecorationProvider.onDidChangeFileDecorations)-event.
+         *
+         * @param uri The uri of the file to provide a decoration for.
+         * @param token A cancellation token.
+         * @returns A decoration or a thenable that resolves to such.
+         */
+        provideFileDecoration(uri: Uri, token: CancellationToken): ProviderResult<FileDecoration>;
+    }
+
+    /**
      * A type of mutation that can be applied to an environment variable.
      */
     export enum EnvironmentVariableMutatorType {
@@ -3105,6 +3063,11 @@ declare module '@theia/plugin' {
         globalState: Memento;
 
         /**
+         * A storage utility for secrets.
+         */
+        readonly secrets: SecretStorage;
+
+        /**
          * The absolute file path of the directory containing the extension.
          */
         extensionPath: string;
@@ -3216,6 +3179,48 @@ declare module '@theia/plugin' {
          * @param value A value. MUST not contain cyclic references.
          */
         update(key: string, value: any): PromiseLike<void>;
+    }
+
+    /**
+     * The event data that is fired when a secret is added or removed.
+     */
+    export interface SecretStorageChangeEvent {
+        /**
+         * The key of the secret that has changed.
+         */
+        readonly key: string;
+    }
+
+    /**
+     * Represents a storage utility for secrets, information that is
+     * sensitive.
+     */
+    export interface SecretStorage {
+        /**
+         * Retrieve a secret that was stored with key. Returns undefined if there
+         * is no password matching that key.
+         * @param key The key the secret was stored under.
+         * @returns The stored value or `undefined`.
+         */
+        get(key: string): Thenable<string | undefined>;
+
+        /**
+         * Store a secret under a given key.
+         * @param key The key to store the secret under.
+         * @param value The secret.
+         */
+        store(key: string, value: string): Thenable<void>;
+
+        /**
+         * Remove a secret from storage.
+         * @param key The key the secret was stored under.
+         */
+        delete(key: string): Thenable<void>;
+
+        /**
+         * Fires when a secret is stored or deleted.
+         */
+        onDidChange: Event<SecretStorageChangeEvent>;
     }
 
     /**
@@ -4454,6 +4459,14 @@ declare module '@theia/plugin' {
         export function registerTerminalLinkProvider(provider: TerminalLinkProvider): void;
 
         /**
+         * Register a file decoration provider.
+         *
+         * @param provider A [FileDecorationProvider](#FileDecorationProvider).
+         * @return A [disposable](#Disposable) that unregisters the provider.
+         */
+        export function registerFileDecorationProvider(provider: FileDecorationProvider): Disposable;
+
+        /**
          * The currently active color theme as configured in the settings. The active
          * theme can be changed via the `workbench.colorTheme` setting.
          */
@@ -4656,7 +4669,7 @@ declare module '@theia/plugin' {
         /**
          * Icon for the button.
          */
-        readonly iconPath: Uri | { light: Uri; dark: Uri } | ThemeIcon;
+        readonly iconPath: Uri | { light: string | Uri; dark: string | Uri } | monaco.theme.ThemeIcon;
 
         /**
          * An optional tooltip.
@@ -7319,6 +7332,12 @@ declare module '@theia/plugin' {
          * instead of fading it out.
          */
         Unnecessary = 1,
+        /**
+         * Deprecated or obsolete code.
+         *
+         * Diagnostics with this tag are rendered with a strike through.
+         */
+        Deprecated = 2,
     }
 
     /**

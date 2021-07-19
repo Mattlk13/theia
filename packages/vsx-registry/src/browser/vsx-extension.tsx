@@ -15,6 +15,7 @@
  ********************************************************************************/
 
 import * as React from '@theia/core/shared/react';
+import * as DOMPurify from '@theia/core/shared/dompurify';
 import { injectable, inject } from '@theia/core/shared/inversify';
 import URI from '@theia/core/lib/common/uri';
 import { TreeElement } from '@theia/core/lib/browser/source-tree';
@@ -26,9 +27,9 @@ import { ProgressService } from '@theia/core/lib/common/progress-service';
 import { Endpoint } from '@theia/core/lib/browser/endpoint';
 import { VSXEnvironment } from '../common/vsx-environment';
 import { VSXExtensionsSearchModel } from './vsx-extensions-search-model';
-import { VSXExtensionNamespaceAccess, VSXUser } from '../common/vsx-registry-types';
 import { MenuPath } from '@theia/core/lib/common';
 import { ContextMenuRenderer } from '@theia/core/lib/browser';
+import { VSXExtensionNamespaceAccess, VSXUser } from '@theia/ovsx-client/lib/ovsx-types';
 
 export const EXTENSIONS_CONTEXT_MENU: MenuPath = ['extensions_context_menu'];
 
@@ -419,6 +420,7 @@ export class VSXExtensionEditorComponent extends AbstractVSXExtensionComponent {
         } = this.props.extension;
 
         const { baseStyle, scrollStyle } = this.getSubcomponentStyles();
+        const sanitizedReadme = !!readme ? DOMPurify.sanitize(readme) : undefined;
 
         return <React.Fragment>
             <div className='header' style={baseStyle} ref={ref => this.header = (ref || undefined)}>
@@ -449,7 +451,7 @@ export class VSXExtensionEditorComponent extends AbstractVSXExtensionComponent {
                 </div>
             </div>
             {
-                readme &&
+                sanitizedReadme &&
                 < div className='scroll-container'
                     style={scrollStyle}
                     ref={ref => this._scrollContainer = (ref || undefined)}>
@@ -457,7 +459,8 @@ export class VSXExtensionEditorComponent extends AbstractVSXExtensionComponent {
                         ref={ref => this.body = (ref || undefined)}
                         onClick={this.openLink}
                         style={baseStyle}
-                        dangerouslySetInnerHTML={{ __html: readme }}
+                        // eslint-disable-next-line react/no-danger
+                        dangerouslySetInnerHTML={{ __html: sanitizedReadme }}
                     />
                 </div>
             }

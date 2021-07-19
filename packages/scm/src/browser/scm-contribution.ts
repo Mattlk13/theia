@@ -19,7 +19,6 @@ import { find } from '@theia/core/shared/@phosphor/algorithm';
 import {
     AbstractViewContribution,
     FrontendApplicationContribution, LabelProvider,
-    QuickOpenService,
     StatusBar,
     StatusBarAlignment,
     StatusBarEntry,
@@ -37,6 +36,7 @@ import { ScmQuickOpenService } from './scm-quick-open-service';
 import { ColorContribution } from '@theia/core/lib/browser/color-application-contribution';
 import { ColorRegistry, Color } from '@theia/core/lib/browser/color-registry';
 import { ScmCommand } from './scm-provider';
+import { ScmDecorationsService } from '../browser/decorations/scm-decorations-service';
 
 export const SCM_WIDGET_FACTORY_ID = ScmWidget.ID;
 export const SCM_VIEW_CONTAINER_ID = 'scm-view-container';
@@ -87,12 +87,12 @@ export class ScmContribution extends AbstractViewContribution<ScmWidget> impleme
 
     @inject(StatusBar) protected readonly statusBar: StatusBar;
     @inject(ScmService) protected readonly scmService: ScmService;
-    @inject(QuickOpenService) protected readonly quickOpenService: QuickOpenService;
     @inject(ScmQuickOpenService) protected readonly scmQuickOpenService: ScmQuickOpenService;
     @inject(LabelProvider) protected readonly labelProvider: LabelProvider;
     @inject(CommandService) protected readonly commands: CommandService;
     @inject(CommandRegistry) protected readonly commandRegistry: CommandRegistry;
     @inject(ContextKeyService) protected readonly contextKeys: ContextKeyService;
+    @inject(ScmDecorationsService) protected readonly scmDecorationsService: ScmDecorationsService;
 
     protected scmFocus: ContextKey<boolean>;
 

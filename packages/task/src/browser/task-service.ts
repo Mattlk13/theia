@@ -14,12 +14,12 @@
  * SPDX-License-Identifier: EPL-2.0 OR GPL-2.0 WITH Classpath-exception-2.0
  ********************************************************************************/
 
-import { ApplicationShell, FrontendApplication, WidgetManager, WidgetOpenMode } from '@theia/core/lib/browser';
+import { ApplicationShell, FrontendApplication, QuickPickItem, QuickPickValue, WidgetManager, WidgetOpenMode } from '@theia/core/lib/browser';
 import { open, OpenerService } from '@theia/core/lib/browser/opener-service';
 import { CommandService, ILogger } from '@theia/core/lib/common';
 import { MessageService } from '@theia/core/lib/common/message-service';
 import { Deferred } from '@theia/core/lib/common/promise-util';
-import { QuickPickItem, QuickPickService } from '@theia/core/lib/common/quick-pick-service';
+import { QuickPickService } from '@theia/core/lib/common/quick-pick-service';
 import { LabelProvider } from '@theia/core/lib/browser/label-provider';
 import URI from '@theia/core/lib/common/uri';
 import { EditorManager } from '@theia/editor/lib/browser';
@@ -64,6 +64,7 @@ import { PROBLEMS_WIDGET_ID, ProblemWidget } from '@theia/markers/lib/browser/pr
 import { TaskNode } from './task-node';
 import { MonacoWorkspace } from '@theia/monaco/lib/browser/monaco-workspace';
 import { TaskTerminalWidgetManager } from './task-terminal-widget-manager';
+import { ShellTerminalServerProxy } from '@theia/terminal/lib/common/shell-terminal-protocol';
 
 export interface QuickPickProblemMatcherItem {
     problemMatchers: NamedProblemMatcher[] | undefined;
@@ -151,10 +152,13 @@ export class TaskService implements TaskConfigurationClient {
     protected readonly problemMatcherRegistry: ProblemMatcherRegistry;
 
     @inject(QuickPickService)
-    protected readonly quickPick: QuickPickService;
+    protected readonly quickPickService: QuickPickService;
 
     @inject(OpenerService)
     protected readonly openerService: OpenerService;
+
+    @inject(ShellTerminalServerProxy)
+    protected readonly shellTerminalServer: ShellTerminalServerProxy;
 
     @inject(TaskNameResolver)
     protected readonly taskNameResolver: TaskNameResolver;
@@ -522,22 +526,22 @@ export class TaskService implements TaskConfigurationClient {
         if (!customizationObject.problemMatcher) {
             // ask the user what s/he wants to use to parse the task output
             const items = this.getCustomizeProblemMatcherItems();
-            const selected = await this.quickPick.show(items, {
+            const selected = await this.quickPickService.show(items, {
                 placeholder: 'Select for which kind of errors and warnings to scan the task output'
             });
-            if (selected) {
-                if (selected.problemMatchers) {
+            if (selected && ('value' in selected)) {
+                if (selected.value?.problemMatchers) {
                     let matcherNames: string[] = [];
-                    if (selected.problemMatchers && selected.problemMatchers.length === 0) { // never parse output for this task
+                    if (selected.value.problemMatchers && selected.value.problemMatchers.length === 0) { // never parse output for this task
                         matcherNames = [];
-                    } else if (selected.problemMatchers && selected.problemMatchers.length > 0) { // continue with user-selected parser
-                        matcherNames = selected.problemMatchers.map(matcher => matcher.name);
+                    } else if (selected.value.problemMatchers && selected.value.problemMatchers.length > 0) { // continue with user-selected parser
+                        matcherNames = selected.value.problemMatchers.map(matcher => matcher.name);
                     }
                     customizationObject.problemMatcher = matcherNames;
 
                     // write the selected matcher (or the decision of "never parse") into the `tasks.json`
                     this.updateTaskConfiguration(token, task, { problemMatcher: matcherNames });
-                } else if (selected.learnMore) { // user wants to learn more about parsing task output
+                } else if (selected.value?.learnMore) { // user wants to learn more about parsing task output
                     open(this.openerService, new URI('https://code.visualstudio.com/docs/editor/tasks#_processing-task-output-with-problem-matchers'));
                 }
                 // else, continue the task with no parser
@@ -952,8 +956,9 @@ export class TaskService implements TaskConfigurationClient {
     protected async runResolvedTask(resolvedTask: TaskConfiguration, option?: RunTaskOption): Promise<TaskInfo | undefined> {
         const source = resolvedTask._source;
         const taskLabel = resolvedTask.label;
+        let taskInfo: TaskInfo | undefined;
         try {
-            const taskInfo = await this.taskServer.run(resolvedTask, this.getContext(), option);
+            taskInfo = await this.taskServer.run(resolvedTask, this.getContext(), option);
             this.lastTask = { source, taskLabel, scope: resolvedTask._scope };
             this.logger.debug(`Task created. Task id: ${taskInfo.taskId}`);
 
@@ -964,18 +969,21 @@ export class TaskService implements TaskConfigurationClient {
              *       Reason: Maybe a new task type wants to also be displayed in a terminal.
              */
             if (typeof taskInfo.terminalId === 'number') {
-                this.attach(taskInfo.terminalId, taskInfo.taskId);
+                await this.attach(taskInfo.terminalId, taskInfo);
             }
             return taskInfo;
         } catch (error) {
             const errorStr = `Error launching task '${taskLabel}': ${error.message}`;
             this.logger.error(errorStr);
             this.messageService.error(errorStr);
+            if (taskInfo && typeof taskInfo.terminalId === 'number') {
+                this.shellTerminalServer.onAttachAttempted(taskInfo.terminalId);
+            }
         }
     }
 
-    protected getCustomizeProblemMatcherItems(): QuickPickItem<QuickPickProblemMatcherItem>[] {
-        const items: QuickPickItem<QuickPickProblemMatcherItem>[] = [];
+    protected getCustomizeProblemMatcherItems(): Array<QuickPickValue<QuickPickProblemMatcherItem> | QuickPickItem> {
+        const items: Array<QuickPickValue<QuickPickProblemMatcherItem> | QuickPickItem> = [];
         items.push({
             label: 'Continue without scanning the task output',
             value: { problemMatchers: undefined }
@@ -1025,11 +1033,7 @@ export class TaskService implements TaskConfigurationClient {
         terminal.sendText(selectedText);
     }
 
-    async attach(terminalId: number, taskId: number): Promise<void> {
-        // Get the list of all available running tasks.
-        const runningTasks: TaskInfo[] = await this.getRunningTasks();
-        // Get the corresponding task information based on task id if available.
-        const taskInfo: TaskInfo | undefined = runningTasks.find((t: TaskInfo) => t.taskId === taskId);
+    async attach(terminalId: number, taskInfo: TaskInfo): Promise<number | void> {
         let widgetOpenMode: WidgetOpenMode = 'open';
         if (taskInfo) {
             const terminalWidget = this.terminalService.getByTerminalId(terminalId);
@@ -1045,6 +1049,7 @@ export class TaskService implements TaskConfigurationClient {
                 }
             }
         }
+        const { taskId } = taskInfo;
         // Create / find a terminal widget to display an execution output of a task that was launched as a command inside a shell.
         const widget = await this.taskTerminalWidgetManager.open({
             created: new Date().toString(),
@@ -1058,7 +1063,7 @@ export class TaskService implements TaskConfigurationClient {
             mode: widgetOpenMode,
             taskInfo
         });
-        widget.start(terminalId);
+        return widget.start(terminalId);
     }
 
     protected getTerminalWidgetId(terminalId: number): string | undefined {
